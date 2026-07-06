@@ -1,4 +1,5 @@
 import "./Sidebar.css";
+import logo from "../assets/images/NAO.png";
 
 import { NavLink } from "react-router-dom";
 
@@ -19,7 +20,7 @@ function Sidebar(){
 
             <div className="logo">
 
-                NA<span>O</span>
+               <img src={logo} alt="NAO Logo" className="logo" />
 
             </div>
 

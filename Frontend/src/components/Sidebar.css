@@ -15,12 +15,12 @@
 }
 
 .logo{
-    font-size:32px;
-    font-weight:bold;
-    color:#f97316;
-
-    margin-bottom:50px;
+    width: 150px;
+    height: auto;
+    display: block;
+    margin: 20px auto 35px;
 }
+
 
 .logo span{
     color:white;
