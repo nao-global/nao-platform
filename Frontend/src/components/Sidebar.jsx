@@ -1,6 +1,7 @@
 import "./Sidebar.css";
 import logo from "../assets/images/NAO.png";
 
+import { useState } from "react";
 import { NavLink } from "react-router-dom";
 
 import {
@@ -9,76 +10,108 @@ import {
     FaExclamationTriangle,
     FaChartBar,
     FaBell,
-    FaCog
+    FaCog,
+    FaBars,
+    FaTimes
 } from "react-icons/fa";
 
-function Sidebar(){
+function Sidebar() {
 
-    return(
+    const [menuOpen, setMenuOpen] = useState(false);
 
-        <aside className="sidebar">
+    return (
+        <>
 
-            <div className="logo">
+            {/* Dark Overlay */}
+            {menuOpen && (
+                <div
+                    className="overlay"
+                    onClick={() => setMenuOpen(false)}
+                ></div>
+            )}
 
-               <img src={logo} alt="NAO Logo" className="logo" />
+            {/* Hamburger Button */}
+            {!menuOpen && (
+                <button
+                    className="menu-toggle"
+                    onClick={() => setMenuOpen(true)}
+                >
+                    <FaBars />
+                </button>
+            )}
 
-            </div>
+            {/* Sidebar */}
+            <aside className={`sidebar ${menuOpen ? "open" : ""}`}>
 
-            <nav className="sidebar-menu">
+                {/* Close Button */}
+                <button
+                    className="close-menu"
+                    onClick={() => setMenuOpen(false)}
+                >
+                    <FaTimes />
+                </button>
 
-                <NavLink to="/">
-
-                    <FaHome/>
-
-                    Dashboard
-
-                </NavLink>
-
-                <NavLink to="/materials">
-
-                    <FaBoxes/>
-
-                    Materials
-
-                </NavLink>
-
-                <NavLink to="/risks">
-
-                    <FaExclamationTriangle/>
-
-                    Risks
-
-                </NavLink>
-
-                <NavLink to="/reports" className="sidebar-item">
-
-                   <FaChartBar />
-                   
-                   <span>Reports</span>
-
-                </NavLink>
-
-                <div className="disabled-link">
-
-                    <FaBell/>
-
-                    Alerts
-
+                {/* Logo */}
+                <div className="logo">
+                    <img
+                        src={logo}
+                        alt="NAO Logo"
+                        className="logo"
+                    />
                 </div>
 
-                <div className="disabled-link">
+                {/* Navigation */}
+                <nav className="sidebar-menu">
 
-                    <FaCog/>
+                    <NavLink
+                        to="/"
+                        onClick={() => setMenuOpen(false)}
+                    >
+                        <FaHome />
+                        Dashboard
+                    </NavLink>
 
-                    Settings
+                    <NavLink
+                        to="/materials"
+                        onClick={() => setMenuOpen(false)}
+                    >
+                        <FaBoxes />
+                        Materials
+                    </NavLink>
 
-                </div>
+                    <NavLink
+                        to="/risks"
+                        onClick={() => setMenuOpen(false)}
+                    >
+                        <FaExclamationTriangle />
+                        Risks
+                    </NavLink>
 
-            </nav>
+                    <NavLink
+                        to="/reports"
+                        className="sidebar-item"
+                        onClick={() => setMenuOpen(false)}
+                    >
+                        <FaChartBar />
+                        <span>Reports</span>
+                    </NavLink>
 
-        </aside>
+                    <div className="disabled-link">
+                        <FaBell />
+                        Alerts
+                    </div>
 
-    )
+                    <div className="disabled-link">
+                        <FaCog />
+                        Settings
+                    </div>
+
+                </nav>
+
+            </aside>
+
+        </>
+    );
 
 }
 

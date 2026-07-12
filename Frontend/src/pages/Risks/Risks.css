@@ -6,6 +6,7 @@
     display:flex;
     justify-content:space-between;
     align-items:center;
+    gap:20px;
     margin-bottom:25px;
 }
 
@@ -28,6 +29,7 @@
 
 .filter-bar{
     display:flex;
+    flex-wrap:wrap;
     gap:15px;
     margin-bottom:30px;
 }
@@ -73,6 +75,7 @@
     justify-content:space-between;
     align-items:center;
     margin-bottom:25px;
+    gap:20px;
 }
 
 .risk-top h2{
@@ -107,4 +110,68 @@
 
 .view-btn:hover{
     background:#e55d00;
+}
+
+/* ==========================
+   TABLET
+========================== */
+
+@media (max-width:992px){
+
+    .risks-header{
+        flex-direction:column;
+        align-items:flex-start;
+    }
+
+    .risk-search{
+        width:100%;
+    }
+
+    .risk-details{
+        grid-template-columns:repeat(2,1fr);
+    }
+
+}
+
+/* ==========================
+   MOBILE
+========================== */
+
+@media (max-width:768px){
+
+    .risks-header h1{
+        font-size:30px;
+    }
+
+    .risks-header p{
+        font-size:15px;
+    }
+
+    .risk-top{
+        flex-direction:column;
+        align-items:flex-start;
+    }
+
+    .risk-details{
+        grid-template-columns:1fr;
+        gap:18px;
+    }
+
+    .risk-item{
+        padding:20px;
+    }
+
+    .view-btn{
+        width:100%;
+    }
+
+    .filter-bar{
+        justify-content:center;
+    }
+
+    .filter-bar button{
+        flex:1;
+        min-width:90px;
+    }
+
 }

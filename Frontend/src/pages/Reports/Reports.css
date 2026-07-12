@@ -90,3 +90,51 @@
 .coming-section li:last-child{
     border-bottom:none;
 }
+
+/* ========================= */
+/* TABLET */
+/* ========================= */
+
+@media (max-width:992px){
+
+    .report-cards{
+        grid-template-columns:1fr;
+    }
+
+}
+
+
+/* ========================= */
+/* MOBILE */
+/* ========================= */
+
+@media (max-width:768px){
+
+    .reports-page{
+        padding-top:70px;
+    }
+
+    .reports-header h1{
+        font-size:32px;
+    }
+
+    .reports-header p{
+        font-size:16px;
+    }
+
+    .report-cards{
+        grid-template-columns:1fr;
+        gap:20px;
+    }
+
+    .report-card{
+        width:100%;
+        padding:25px;
+    }
+
+    .report-card button{
+        width:100%;
+        justify-content:center;
+    }
+
+}

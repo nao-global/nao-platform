@@ -1,20 +1,41 @@
 .layout{
-
     display:flex;
 }
 
 .main{
-
     margin-left:250px;
-
     width:calc(100% - 250px);
-
     min-height:100vh;
-
     background:#f8fafc;
+    transition:.3s;
 }
 
 .page-content{
-
     padding:30px;
+}
+
+/* ---------- Tablet ---------- */
+
+@media (max-width:992px){
+
+    .main{
+        margin-left:220px;
+        width:calc(100% - 220px);
+    }
+
+}
+
+/* ---------- Mobile ---------- */
+
+@media (max-width:768px){
+
+    .main{
+        margin-left:0;
+        width:100%;
+    }
+
+    .page-content{
+        padding:80px 20px 20px;
+    }
+
 }

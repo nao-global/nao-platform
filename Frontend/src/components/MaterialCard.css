@@ -9,99 +9,112 @@
 }
 
 .material-grid{
-
     display:grid;
-
     grid-template-columns:repeat(2,1fr);
-
     gap:20px;
 }
 
 .material-card{
-
     background:white;
-
     border-radius:16px;
-
     padding:20px;
-
     box-shadow:0 10px 20px rgba(0,0,0,.08);
-
     transition:.3s;
 }
 
 .material-card:hover{
-
     transform:translateY(-5px);
 }
 
 .material-header{
-
     display:flex;
-
     justify-content:space-between;
-
     align-items:center;
-
     margin-bottom:12px;
+    gap:10px;
 }
 
 .material-name{
-
     font-size:20px;
-
     font-weight:bold;
 }
 
 .badge{
-
     padding:6px 12px;
-
     border-radius:20px;
-
     color:white;
-
     font-size:13px;
-
     font-weight:bold;
+    white-space:nowrap;
 }
 
 .high{
-
     background:#ef4444;
 }
 
 .medium{
-
     background:#f59e0b;
 }
 
 .low{
-
     background:#22c55e;
 }
 
 .material-category{
-
     color:#64748b;
-
     margin-bottom:10px;
 }
 
 .material-description{
-
     color:#475569;
-
     line-height:1.5;
 }
 
 .view-link{
-
     display:inline-block;
-
     margin-top:18px;
-
     color:#f97316;
-
     font-weight:bold;
+    text-decoration:none;
+}
+
+/* =======================
+   TABLET
+======================= */
+
+@media (max-width:992px){
+
+    .material-grid{
+        grid-template-columns:1fr;
+    }
+
+}
+
+/* =======================
+   MOBILE
+======================= */
+
+@media (max-width:768px){
+
+    .material-card{
+        padding:18px;
+    }
+
+    .material-header{
+        flex-direction:column;
+        align-items:flex-start;
+    }
+
+    .material-name{
+        font-size:18px;
+    }
+
+    .material-description{
+        font-size:15px;
+    }
+
+    .badge{
+        margin-top:6px;
+    }
+
 }
