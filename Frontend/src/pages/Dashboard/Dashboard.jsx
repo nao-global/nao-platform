@@ -50,22 +50,7 @@ function Dashboard() {
     <>
   <div className="dashboard-header">
 
-    <div>
-
-      <h1>NAO Dashboard</h1>
-
-      <p>
-        Strategic Supply Chain Risk Intelligence
-      </p>
-
-    </div>
-
-    <button className="refresh-btn">
-
-      Live Intelligence
-
-    </button>
-
+    
   </div>
 
   <div className="kpi-grid">

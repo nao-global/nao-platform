@@ -2,6 +2,7 @@ require("dotenv").config();
 const materialRoutes = require("./routes/materials");
 const riskRoutes = require("./routes/risks");
 const cors = require("cors");
+const newsRoutes = require("./routes/newsRoutes");
 
 const express = require("express");
 const mongoose = require("mongoose")
@@ -11,7 +12,7 @@ app.use(cors());
 
 app.use(express.json());
 
-
+app.use("/api/news", newsRoutes);
 app.use("/api/risks", riskRoutes);
 app.use("/api/materials", materialRoutes);
 
