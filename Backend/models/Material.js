@@ -1,5 +1,4 @@
 const mongoose = require("mongoose");
-
 const Schema = mongoose.Schema;
 
 const materialSchema = new Schema(
@@ -8,6 +7,7 @@ const materialSchema = new Schema(
       type: String,
       required: true,
       unique: true,
+      trim: true,
     },
 
     category: {
@@ -28,11 +28,17 @@ const materialSchema = new Schema(
     dependencyScore: {
       type: Number,
       required: true,
+      min: 0,
+      max: 100,
     },
 
+    // This remains the material-level score.
+    // Individual risk-event scores are stored on Risk.riskScore.
     riskScore: {
       type: Number,
       required: true,
+      min: 0,
+      max: 100,
     },
 
     affectedIndustries: {
