@@ -1,7 +1,8 @@
-
 import "./Dashboard.css";
+
 import { useCallback, useEffect, useMemo, useState } from "react";
 import axios from "axios";
+
 import {
   FaExclamationCircle,
   FaBox,
@@ -41,22 +42,27 @@ function getTrend(risk) {
 
 function titleCase(value) {
   if (!value) return "Not available";
+
   const text = String(value);
   return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
 function getMaterialId(risk) {
   const material = risk?.materialId;
+
   if (typeof material === "string") return material;
   if (material?._id) return String(material._id);
+
   return null;
 }
 
 function getMaterialName(risk) {
   const material = risk?.materialId;
+
   if (material && typeof material === "object" && material.name) {
     return material.name;
   }
+
   return "Material not linked";
 }
 
@@ -121,6 +127,7 @@ function Dashboard() {
       setLastUpdated(new Date());
     } catch (err) {
       console.error("Unable to load NAO dashboard:", err);
+
       setError(
         "Unable to load live NAO data. Check your connection and try again."
       );
@@ -230,6 +237,7 @@ function Dashboard() {
     : "Waiting for data";
 
   const trend = getTrend(primaryRisk);
+
   const trendSymbol = ["increasing", "worsening"].includes(trend)
     ? "↗"
     : ["decreasing", "improving"].includes(trend)
@@ -237,6 +245,23 @@ function Dashboard() {
       : trend === "stable"
         ? "→"
         : "—";
+
+  // Navigate directly to the selected risk's details.
+  const openRiskDetails = (risk) => {
+    if (!risk?._id) {
+      console.error("Cannot open risk details: risk ID is missing.");
+      return;
+    }
+
+    window.location.href = `/risks/${encodeURIComponent(risk._id)}`;
+  };
+
+  const handleRiskKeyDown = (event, risk) => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      openRiskDetails(risk);
+    }
+  };
 
   return (
     <div className="nao-dashboard">
@@ -263,7 +288,9 @@ function Dashboard() {
             onClick={() => fetchDashboard(true)}
             disabled={loading || refreshing}
           >
-            <FaSyncAlt className={refreshing ? "refresh-spinning" : ""} />
+            <FaSyncAlt
+              className={refreshing ? "refresh-spinning" : ""}
+            />
             {refreshing ? "Refreshing..." : "Refresh"}
           </button>
         </div>
@@ -293,6 +320,7 @@ function Dashboard() {
                 {highCriticalCount} high / critical risks
               </span>
             </div>
+
             <div className="overview-icon exposure-icon">
               <FaExclamationCircle />
             </div>
@@ -306,6 +334,7 @@ function Dashboard() {
               </strong>
               <span className="overview-footnote">Tracked materials</span>
             </div>
+
             <div className="overview-icon neutral-icon">
               <FaCube />
             </div>
@@ -314,11 +343,12 @@ function Dashboard() {
           <article className="overview-card">
             <div>
               <span className="overview-label">Critical Dependencies</span>
-              <strong className="overview-number">
-                {loading ? "..." : supplierDependencyCount}
-              </strong>
-              <span className="overview-footnote">Linked supplier records</span>
+              <strong className="overview-number">—</strong>
+              <span className="overview-footnote">
+                Supplier dependency tracking coming soon
+              </span>
             </div>
+
             <div className="overview-icon neutral-icon">
               <FaProjectDiagram />
             </div>
@@ -330,8 +360,11 @@ function Dashboard() {
               <strong className="overview-number">
                 {loading ? "..." : recommendations.length}
               </strong>
-              <span className="overview-footnote">Recorded recommendations</span>
+              <span className="overview-footnote">
+                Recorded recommendations
+              </span>
             </div>
+
             <div className="overview-icon action-icon">
               <FaClipboardList />
             </div>
@@ -341,25 +374,52 @@ function Dashboard() {
         <div className="dashboard-live-note">
           <span className="live-indicator" />
           Live backend data · Refreshes every 60 seconds
-          <span>{lastUpdated ? `Last checked ${lastUpdated.toLocaleString()}` : "Waiting for data"}</span>
+          <span>
+            {lastUpdated
+              ? `Last checked ${lastUpdated.toLocaleString()}`
+              : "Waiting for data"}
+          </span>
         </div>
 
-        <section className="primary-disruption">
-          <div className="primary-disruption-icon">
-            <FaGlobe />
-          </div>
+        
+<section
+  className="primary-disruption primary-disruption-clickable"
+  role="link"
+  tabIndex={0}
+  aria-label={`View details for ${primaryRisk?.title || "primary disruption"}`}
+  onClick={() => {
+    if (primaryRisk?._id) {
+      window.location.href = `/risks/${encodeURIComponent(primaryRisk._id)}`;
+    }
+  }}
+  onKeyDown={(event) => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
 
-          <div className="primary-disruption-main">
-            <span className="section-eyebrow">PRIMARY DISRUPTION</span>
-            <h2>
-              {primaryRisk?.title ||
-                (loading ? "Loading risk information..." : "No risks available")}
-            </h2>
-            <p>
-              {primaryRisk?.description ||
-                "The leading recorded risk will appear here when available."}
-            </p>
-          </div>
+      if (primaryRisk?._id) {
+        window.location.href = `/risks/${encodeURIComponent(primaryRisk._id)}`;
+      }
+    }
+  }}
+>
+  <div className="primary-disruption-icon">
+    <FaGlobe />
+  </div>
+
+  <div className="primary-disruption-main">
+    <span className="section-eyebrow">PRIMARY DISRUPTION</span>
+
+    <h2>
+      {primaryRisk?.title ||
+        (loading ? "Loading risk information..." : "No risks available")}
+    </h2>
+
+    <p>
+      {primaryRisk?.description ||
+        "The leading recorded risk will appear here when available."}
+    </p>
+  </div>
+
 
           <div className="disruption-meta">
             <span className="section-eyebrow">Risk Type</span>
@@ -408,7 +468,9 @@ function Dashboard() {
                 <strong>
                   {primaryMaterial?.name || getMaterialName(primaryRisk)}
                 </strong>
-                <span>{primaryMaterial?.category || "Category unavailable"}</span>
+                <span>
+                  {primaryMaterial?.category || "Category unavailable"}
+                </span>
               </article>
 
               <FaArrowRight className="flow-arrow" />
@@ -451,6 +513,7 @@ function Dashboard() {
                 <span className="section-eyebrow">GLOBAL SIGNALS</span>
                 <h2>Priority risks</h2>
               </div>
+
               <button
                 type="button"
                 className="text-link"
@@ -466,7 +529,11 @@ function Dashboard() {
               <div className="global-signals-list">
                 {prioritizedRisks.slice(0, 5).map((risk) => {
                   const riskTrend = getTrend(risk);
-                  const symbol = ["increasing", "worsening"].includes(riskTrend)
+
+                  const symbol = [
+                    "increasing",
+                    "worsening",
+                  ].includes(riskTrend)
                     ? "↗"
                     : ["decreasing", "improving"].includes(riskTrend)
                       ? "↘"
@@ -475,20 +542,37 @@ function Dashboard() {
                         : "—";
 
                   return (
-                    <article className="global-signal" key={risk._id}>
+                    <article
+                      className="global-signal global-signal-clickable"
+                      key={risk._id}
+                      role="link"
+                      tabIndex={0}
+                      aria-label={`View details for ${risk.title || "Untitled risk"}`}
+                      onClick={() => openRiskDetails(risk)}
+                      onKeyDown={(event) =>
+                        handleRiskKeyDown(event, risk)
+                      }
+                    >
                       <div className="global-signal-icon">
                         <FaGlobe />
                       </div>
+
                       <div className="global-signal-copy">
-                        <strong>{risk.title || "Untitled risk"}</strong>
+                        <strong>
+                          {risk.title || "Untitled risk"}
+                        </strong>
                         <span>
                           {risk.location || "Location unknown"} ·{" "}
                           {getMaterialName(risk)}
                         </span>
                       </div>
-                      <span className={`signal-severity ${getSeverity(risk)}`}>
+
+                      <span
+                        className={`signal-severity ${getSeverity(risk)}`}
+                      >
                         {titleCase(getSeverity(risk))}
                       </span>
+
                       <span className={`signal-trend ${riskTrend}`}>
                         {symbol}
                       </span>
@@ -525,7 +609,9 @@ function Dashboard() {
                 <div>
                   <span>Supply continuity risk</span>
                   <strong>
-                    {primaryRisk ? titleCase(getSeverity(primaryRisk)) : "Unknown"}
+                    {primaryRisk
+                      ? titleCase(getSeverity(primaryRisk))
+                      : "Unknown"}
                   </strong>
                   <p>
                     {primaryRisk?.operationalImpact ||
@@ -558,7 +644,9 @@ function Dashboard() {
                 </div>
                 <div>
                   <span>Product availability</span>
-                  <strong>{primaryMaterial ? "Material linked" : "Not mapped"}</strong>
+                  <strong>
+                    {primaryMaterial ? "Material linked" : "Not mapped"}
+                  </strong>
                   <p>
                     {primaryMaterial?.description ||
                       "Product availability data is not connected."}
@@ -573,7 +661,9 @@ function Dashboard() {
                 <div>
                   <span>Exposure level</span>
                   <strong>
-                    {primaryRisk ? titleCase(getSeverity(primaryRisk)) : "Unknown"}
+                    {primaryRisk
+                      ? titleCase(getSeverity(primaryRisk))
+                      : "Unknown"}
                   </strong>
                   <p>
                     {primaryRisk?.riskScore != null
@@ -609,10 +699,14 @@ function Dashboard() {
             </div>
 
             <div className="trend-summary">
-              <span className={`trend-arrow ${trend}`}>{trendSymbol}</span>
+              <span className={`trend-arrow ${trend}`}>
+                {trendSymbol}
+              </span>
               <div>
                 <span>Recorded trend</span>
-                <strong>{primaryRisk ? titleCase(trend) : "Unknown"}</strong>
+                <strong>
+                  {primaryRisk ? titleCase(trend) : "Unknown"}
+                </strong>
               </div>
             </div>
 
@@ -646,7 +740,10 @@ function Dashboard() {
           {recommendations.length ? (
             <div className="recommendations-grid">
               {recommendations.slice(0, 3).map((item, index) => (
-                <article className="recommendation-card" key={item._id || index}>
+                <article
+                  className="recommendation-card"
+                  key={item._id || index}
+                >
                   <div className="recommendation-icon">
                     {index === 0 ? (
                       <FaCheckCircle />
@@ -656,6 +753,7 @@ function Dashboard() {
                       <FaShieldAlt />
                     )}
                   </div>
+
                   <div>
                     <strong>
                       {item.title ||

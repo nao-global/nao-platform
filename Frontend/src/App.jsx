@@ -1,3 +1,4 @@
+
 import { Routes, Route } from "react-router-dom";
 
 import "./styles/layout.css";
@@ -10,59 +11,40 @@ import Dashboard from "./pages/Dashboard/Dashboard";
 import Materials from "./pages/Materials/Materials";
 import Risks from "./pages/Risks/Risks";
 import MaterialDetails from "./pages/MaterialDetails/MaterialDetails";
+import RiskDetails from "./pages/RiskDetails/RiskDetails";
 
-function App(){
+function App() {
+  return (
+    <div className="layout">
+      <Sidebar />
 
-    return(
+      <div className="main">
+        <Header />
 
-        <div className="layout">
+        <div className="page-content">
+          <Routes>
+            <Route path="/" element={<Dashboard />} />
 
-            <Sidebar/>
+            <Route path="/materials" element={<Materials />} />
 
-            <div className="main">
+            <Route
+              path="/materials/:id"
+              element={<MaterialDetails />}
+            />
 
-                <Header/>
+            <Route path="/risks" element={<Risks />} />
 
-                <div className="page-content">
+            <Route
+              path="/risks/:id"
+              element={<RiskDetails />}
+            />
 
-                    <Routes>
-
-                        <Route
-                            path="/"
-                            element={<Dashboard/>}
-                        />
-
-                        <Route
-                            path="/materials"
-                            element={<Materials/>}
-                        />
-
-                        <Route
-                            path="/materials/:id"
-                            element={<MaterialDetails/>}
-                        />
-
-                        <Route
-                            path="/risks"
-                            element={<Risks/>}
-                        />
-
-                    
-
-                        <Route 
-                        path="/reports" 
-                        element={<Reports />} />
-
-                    </Routes>
-
-                </div>
-
-            </div>
-
+            <Route path="/reports" element={<Reports />} />
+          </Routes>
         </div>
-
-    )
-
+      </div>
+    </div>
+  );
 }
 
 export default App;

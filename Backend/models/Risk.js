@@ -118,6 +118,12 @@ const riskSchema = new Schema(
       trim: true,
     },
 
+    riskType: {
+      type: String,
+      trim: true,
+      default: "Not classified",
+    },
+
     severity: {
       type: String,
       required: true,

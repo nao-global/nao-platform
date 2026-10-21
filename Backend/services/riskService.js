@@ -1,4 +1,3 @@
-
 const Risk = require("../models/Risk");
 const Material = require("../models/Material");
 
@@ -54,6 +53,37 @@ const normalizeTrend = (value) => {
     values[String(value ?? "").trim().toLowerCase()] ||
     "Unknown"
   );
+};
+
+// ======================================================
+// RISK TYPE NORMALIZATION
+// ======================================================
+
+const normalizeRiskType = (value) => {
+  const allowedTypes = {
+    "trade restrictions": "Trade Restrictions",
+    "trade / regulatory": "Trade / Regulatory",
+    "regulatory": "Trade / Regulatory",
+    "supplier risk": "Supplier Risk",
+    "supply disruption": "Supply Disruption",
+    "supply shortage": "Supply Shortage",
+    "market / price volatility": "Market / Price Volatility",
+    "price volatility": "Market / Price Volatility",
+    "geopolitical risk": "Geopolitical Risk",
+    "natural disaster": "Natural Disaster",
+    "cybersecurity": "Cybersecurity",
+    "logistics disruption": "Logistics Disruption",
+    "environmental risk": "Environmental Risk",
+    "labor disruption": "Labor Disruption",
+    "other": "Other",
+    "not classified": "Not classified",
+  };
+
+  const normalized = String(value ?? "")
+    .trim()
+    .toLowerCase();
+
+  return allowedTypes[normalized] || "Not classified";
 };
 
 const normalizeScore = (value) => {
@@ -208,8 +238,8 @@ const findMaterial = async (name) => {
 
   const escapedName = escapeRegex(String(name).trim());
 
-  // Prefer a database lookup, then compare normalized names
-  // to handle differences in capitalization and punctuation.
+  // Prefer an exact database lookup, then compare normalized
+  // names to handle differences in capitalization/punctuation.
   const exact = await Material.findOne({
     name: {
       $regex: `^${escapedName}$`,
@@ -317,7 +347,8 @@ const saveRisksFromAnalysis = async ({
 
   if (aiAnalysis.isRelevant !== true) {
     result.skipped.push({
-      reason: "Article is not relevant to NAO risk intelligence.",
+      reason:
+        "Article is not relevant to NAO risk intelligence.",
     });
 
     return result;
@@ -338,8 +369,9 @@ const saveRisksFromAnalysis = async ({
   const publishedAt = getPublishedAt(article);
   const evidenceHash = getEvidenceHash(aiAnalysis, article);
 
-  const title =
-    String(aiAnalysis.title || article.title || "").trim();
+  const title = String(
+    aiAnalysis.title || article.title || ""
+  ).trim();
 
   const description =
     typeof aiAnalysis.description === "string"
@@ -363,6 +395,10 @@ const saveRisksFromAnalysis = async ({
   const severity = normalizeSeverity(aiAnalysis.severity);
   const trend = normalizeTrend(aiAnalysis.trend);
 
+  // Normalize the AI-provided risk type.
+  // Missing or unsupported values become "Not classified".
+  const riskType = normalizeRiskType(aiAnalysis.riskType);
+
   const operationalImpactScore = normalizeScore(
     aiAnalysis.operationalImpactScore
   );
@@ -381,8 +417,7 @@ const saveRisksFromAnalysis = async ({
     aiAnalysis.recommendations
   );
 
-  const assessment =
-    aiAnalysis.operationalImpactAssessment;
+  const assessment = aiAnalysis.operationalImpactAssessment;
 
   const operationalImpactAssessment =
     assessment && typeof assessment === "object"
@@ -390,7 +425,7 @@ const saveRisksFromAnalysis = async ({
           ...(typeof assessment.rationale === "string"
             ? { rationale: assessment.rationale.trim() }
             : {}),
-          ...( ["Low", "Medium", "High"].includes(
+          ...(["Low", "Medium", "High"].includes(
             assessment.confidence
           )
             ? { confidence: assessment.confidence }
@@ -419,6 +454,7 @@ const saveRisksFromAnalysis = async ({
     const riskData = {
       materialId: material._id,
       title,
+      riskType,
       severity,
       location,
       description,
@@ -453,10 +489,13 @@ const saveRisksFromAnalysis = async ({
       title,
     });
 
+    // ==================================================
+    // UPDATE EXISTING RISK
+    // ==================================================
+
     if (risk) {
       // Preserve existing recommendations and supplier exposures.
-      // New recommendations are added only when they are not
-      // already present; existing manually curated items remain.
+      // New recommendations are added only when not already present.
       const existingRecommendations = cleanRecommendations(
         risk.recommendations
       );
@@ -484,6 +523,18 @@ const saveRisksFromAnalysis = async ({
       }
 
       risk.title = riskData.title;
+
+      // Update classification only when AI supplies a value.
+      // Otherwise, preserve an existing manually assigned type.
+      if (
+        typeof aiAnalysis.riskType === "string" &&
+        aiAnalysis.riskType.trim()
+      ) {
+        risk.riskType = normalizeRiskType(
+          aiAnalysis.riskType
+        );
+      }
+
       risk.severity = riskData.severity;
       risk.location = riskData.location;
       risk.description = riskData.description;
@@ -532,9 +583,8 @@ const saveRisksFromAnalysis = async ({
         risk.evidenceHash = evidenceHash;
       }
 
-      // AI analysis alone does not verify a supplier relationship.
-      // This status means the risk has passed the application's
-      // news-analysis and database-persistence workflow.
+      // This status represents the application's news-analysis
+      // and database-persistence workflow, not supplier verification.
       risk.evidenceStatus = "Verified";
       risk.evidenceVerifiedAt = new Date();
 
@@ -552,6 +602,10 @@ const saveRisksFromAnalysis = async ({
 
       continue;
     }
+
+    // ==================================================
+    // CREATE NEW RISK
+    // ==================================================
 
     // Do not mark evidence verified until the initial database
     // write succeeds.
@@ -585,8 +639,8 @@ const saveRisksFromAnalysis = async ({
       result.existing.push(risk);
     }
 
-    // Only newly created risks and existing risks that successfully
-    // passed the update path are marked verified.
+    // Only newly created risks are marked verified here.
+    // Existing risks are handled in the update path above.
     if (!result.existing.includes(risk)) {
       risk.evidenceStatus = "Verified";
       risk.evidenceVerifiedAt = new Date();
@@ -596,6 +650,7 @@ const saveRisksFromAnalysis = async ({
       }
 
       await risk.save();
+
       result.saved.push(risk);
     }
 
@@ -608,6 +663,10 @@ const saveRisksFromAnalysis = async ({
   }
 
   result.riskLinks = riskLinks;
+
+  // ======================================================
+  // SUPPLIER MAPPING
+  // ======================================================
 
   // Supplier mapping expects each riskLinks entry to contain
   // the actual risk document and materialName.

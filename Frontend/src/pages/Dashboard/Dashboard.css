@@ -890,3 +890,35 @@
     width: 100%;
   }
 }
+ 
+.global-signal-clickable {
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+
+.global-signal-clickable:hover {
+  background-color: #f8fafc;
+}
+
+.global-signal-clickable:focus-visible {
+  outline: 2px solid #f04444;
+  outline-offset: 2px;
+}
+
+
+.primary-disruption-clickable {
+  cursor: pointer;
+  transition:
+    background-color 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.primary-disruption-clickable:hover {
+  background-color: #fff5f3;
+  box-shadow: 0 4px 12px rgba(240, 68, 68, 0.08);
+}
+
+.primary-disruption-clickable:focus-visible {
+  outline: 2px solid #f04444;
+  outline-offset: 3px;
+}

@@ -11,6 +11,23 @@ const TRACKED_MATERIALS = [
   "Ruthenium",
 ];
 
+const RISK_TYPES = [
+  "Trade Restrictions",
+  "Trade / Regulatory",
+  "Supplier Risk",
+  "Supply Disruption",
+  "Supply Shortage",
+  "Market / Price Volatility",
+  "Geopolitical Risk",
+  "Natural Disaster",
+  "Cybersecurity",
+  "Logistics Disruption",
+  "Environmental Risk",
+  "Labor Disruption",
+  "Other",
+  "Not classified",
+];
+
 const SUPPLIER_TYPES = [
   "Miner",
   "Refiner",
@@ -70,6 +87,10 @@ const isHttpUrl = (value) => {
   }
 };
 
+// ======================================================
+// ORGANIZATION CLEANING
+// ======================================================
+
 const getCleanOrganizations = (
   organizations,
   articleText,
@@ -102,8 +123,7 @@ const getCleanOrganizations = (
     const normalizedName =
       normalizeForMatch(name);
 
-    // Do not create records for company names that
-    // cannot be found in the supplied article text.
+    // Only retain organizations actually mentioned in the article.
     if (
       !normalizedName ||
       !normalizedArticle.includes(normalizedName)
@@ -175,8 +195,8 @@ const getCleanOrganizations = (
           String(relationship.summary ?? "").trim(),
       }));
 
-    // Countries are retained only when they are
-    // explicitly present in the provided article text.
+    // Countries are retained only when explicitly present
+    // in the supplied article text.
     let country =
       String(organization.country ?? "Unknown")
         .trim() || "Unknown";
@@ -190,8 +210,8 @@ const getCleanOrganizations = (
       country = "Unknown";
     }
 
-    // An AI-generated website is accepted only if
-    // that actual URL appears in the article text.
+    // Accept a website only if the exact URL appears
+    // in the supplied article text.
     let website = "";
 
     if (
@@ -216,9 +236,7 @@ const getCleanOrganizations = (
         "Organization mentioned in a relevant article; role requires review.",
 
       relatedMaterials,
-
       materialRelationships,
-
       confidence,
 
       evidenceSummary:
@@ -231,6 +249,10 @@ const getCleanOrganizations = (
 
   return cleaned.slice(0, 12);
 };
+
+// ======================================================
+// NEWS ANALYSIS
+// ======================================================
 
 const analyzeNews = async ({
   title,
@@ -274,11 +296,10 @@ const analyzeNews = async ({
   ].join("\n");
 
   try {
-    const response =
-      await openai.responses.create({
-        model: "gpt-5.6-luna",
+    const response = await openai.responses.create({
+      model: "gpt-5.6-luna",
 
-        input: `
+      input: `
 You are the semantic news analyst for NAO, a Supply Chain Risk Intelligence platform.
 
 NAO tracks these strategic materials:
@@ -298,6 +319,7 @@ ${JSON.stringify(materialHints)}
 These are retrieval hints only. Do not assume they are correct.
 
 FALSE POSITIVES:
+
 Reject articles about:
 - titanium watches, watch bands, knives, accessories, and unrelated
   consumer products
@@ -311,6 +333,7 @@ Reject articles about:
 - articles in which a material is an incidental product component
 
 RELEVANT SIGNALS:
+
 - supply disruptions, shortages, production cuts, and mine closures
 - mining, refining, processing, recycling, and transport problems
 - export controls, tariffs, sanctions, and trade restrictions
@@ -325,11 +348,47 @@ RELEVANT SIGNALS:
 Research articles can be relevant when they could materially
 affect future supply, demand, production, availability,
 substitution, material intensity, or strategic dependence.
+
 Do not assume research has been commercialized.
 
+RISK TYPE CLASSIFICATION:
+
+For every relevant article, assign exactly one riskType from
+the following categories:
+
+- Trade Restrictions: export controls, tariffs, sanctions,
+  or restrictions on material trade.
+- Trade / Regulatory: other government policies or regulations
+  affecting material supply or trade.
+- Supplier Risk: supplier concentration, dependence, or
+  supplier-specific problems.
+- Supply Disruption: interruptions to mining, refining,
+  processing, production, or transportation.
+- Supply Shortage: insufficient material availability or
+  a material supply deficit.
+- Market / Price Volatility: price fluctuations, cost pressure,
+  or commodity market instability.
+- Geopolitical Risk: political instability, international
+  tensions, or geopolitical events affecting supply.
+- Natural Disaster: natural events disrupting supply or production.
+- Cybersecurity: cyber incidents affecting relevant operations.
+- Logistics Disruption: shipping, freight, port, or transport issues.
+- Environmental Risk: environmental events or restrictions
+  affecting material supply or production.
+- Labor Disruption: strikes or workforce disruptions.
+- Other: a relevant risk that does not fit the categories above.
+- Not classified: use only when the evidence is insufficient
+  to assign a category.
+
+Choose the category that best describes the primary risk reported
+in the article. Do not confuse riskType with severity or trend.
+Classify the event described, not merely the material mentioned.
+
 COMPANY AND ORGANIZATION EXTRACTION:
+
 For relevant articles, identify named organizations that have
 a meaningful connection to the reported supply-chain event.
+
 Extract at most 12 organizations.
 
 Use only organization names that actually appear in the supplied
@@ -376,11 +435,13 @@ If an organization is simply named without a clear role, say so.
 If no relevant organizations are identified, return an empty array.
 
 Supplier relationships and verification:
+
 AI extraction does not independently verify a real commercial
 supplier relationship. NAO will initially store article-based
 company links as unverified.
 
 OPERATIONAL IMPACT SCORE:
+
 Return an integer from 0 to 100 that estimates the magnitude of
 operational or business consequences, not event probability and
 not material dependency.
@@ -403,6 +464,7 @@ Worsening, or Unknown.
 
 If the article is irrelevant, return:
 - isRelevant=false
+- riskType="Not classified"
 - materials=[]
 - material="Unknown"
 - severity="Unknown"
@@ -433,230 +495,232 @@ Published:
 ${safePublishedAt}
 `,
 
-        text: {
-          format: {
-            type: "json_schema",
+      text: {
+        format: {
+          type: "json_schema",
+          name: "nao_news_analysis",
+          strict: true,
 
-            name: "nao_news_analysis",
+          schema: {
+            type: "object",
+            additionalProperties: false,
 
-            strict: true,
+            properties: {
+              isRelevant: {
+                type: "boolean",
+              },
 
-            schema: {
-              type: "object",
-              additionalProperties: false,
+              riskType: {
+                type: "string",
+                enum: RISK_TYPES,
+              },
 
-              properties: {
-                isRelevant: {
-                  type: "boolean",
-                },
-
-                materials: {
-                  type: "array",
-                  items: {
-                    type: "string",
-                    enum: TRACKED_MATERIALS,
-                  },
-                },
-
-                material: {
+              materials: {
+                type: "array",
+                items: {
                   type: "string",
-                },
-
-                title: {
-                  type: "string",
-                },
-
-                severity: {
-                  type: "string",
-                  enum: [
-                    "Low",
-                    "Medium",
-                    "High",
-                    "Critical",
-                    "Unknown",
-                  ],
-                },
-
-                location: {
-                  type: "string",
-                },
-
-                description: {
-                  type: "string",
-                },
-
-                operationalImpact: {
-                  type: "string",
-                },
-
-                operationalImpactScore: {
-                  type: "integer",
-                  minimum: 0,
-                  maximum: 100,
-                },
-
-                operationalImpactRationale: {
-                  type: "string",
-                },
-
-                operationalImpactConfidence: {
-                  type: "string",
-                  enum:
-                    OPERATIONAL_IMPACT_CONFIDENCE,
-                },
-
-                trend: {
-                  type: "string",
-                  enum: [
-                    "Improving",
-                    "Stable",
-                    "Worsening",
-                    "Unknown",
-                  ],
-                },
-
-                industryImpacts: {
-                  type: "array",
-
-                  items: {
-                    type: "object",
-                    additionalProperties: false,
-
-                    properties: {
-                      industry: {
-                        type: "string",
-                      },
-
-                      impact: {
-                        type: "string",
-                      },
-                    },
-
-                    required: [
-                      "industry",
-                      "impact",
-                    ],
-                  },
-                },
-
-                organizations: {
-                  type: "array",
-
-                  items: {
-                    type: "object",
-                    additionalProperties: false,
-
-                    properties: {
-                      name: {
-                        type: "string",
-                      },
-
-                      country: {
-                        type: "string",
-                      },
-
-                      website: {
-                        type: "string",
-                      },
-
-                      supplierType: {
-                        type: "string",
-                        enum: SUPPLIER_TYPES,
-                      },
-
-                      roleDescription: {
-                        type: "string",
-                      },
-
-                      relatedMaterials: {
-                        type: "array",
-                        items: {
-                          type: "string",
-                          enum: TRACKED_MATERIALS,
-                        },
-                      },
-
-                      materialRelationships: {
-                        type: "array",
-
-                        items: {
-                          type: "object",
-                          additionalProperties: false,
-
-                          properties: {
-                            material: {
-                              type: "string",
-                              enum: TRACKED_MATERIALS,
-                            },
-
-                            relationshipType: {
-                              type: "string",
-                              enum:
-                                MATERIAL_RELATIONSHIP_TYPES,
-                            },
-
-                            summary: {
-                              type: "string",
-                            },
-                          },
-
-                          required: [
-                            "material",
-                            "relationshipType",
-                            "summary",
-                          ],
-                        },
-                      },
-
-                      confidence: {
-                        type: "string",
-                        enum: [
-                          "Low",
-                          "Medium",
-                          "High",
-                        ],
-                      },
-
-                      evidenceSummary: {
-                        type: "string",
-                      },
-                    },
-
-                    required: [
-                      "name",
-                      "country",
-                      "website",
-                      "supplierType",
-                      "roleDescription",
-                      "relatedMaterials",
-                      "materialRelationships",
-                      "confidence",
-                      "evidenceSummary",
-                    ],
-                  },
+                  enum: TRACKED_MATERIALS,
                 },
               },
 
-              required: [
-                "isRelevant",
-                "materials",
-                "material",
-                "title",
-                "severity",
-                "location",
-                "description",
-                "operationalImpact",
-                "operationalImpactScore",
-                "operationalImpactRationale",
-                "operationalImpactConfidence",
-                "trend",
-                "industryImpacts",
-                "organizations",
-              ],
+              material: {
+                type: "string",
+              },
+
+              title: {
+                type: "string",
+              },
+
+              severity: {
+                type: "string",
+                enum: [
+                  "Low",
+                  "Medium",
+                  "High",
+                  "Critical",
+                  "Unknown",
+                ],
+              },
+
+              location: {
+                type: "string",
+              },
+
+              description: {
+                type: "string",
+              },
+
+              operationalImpact: {
+                type: "string",
+              },
+
+              operationalImpactScore: {
+                type: "integer",
+                minimum: 0,
+                maximum: 100,
+              },
+
+              operationalImpactRationale: {
+                type: "string",
+              },
+
+              operationalImpactConfidence: {
+                type: "string",
+                enum: OPERATIONAL_IMPACT_CONFIDENCE,
+              },
+
+              trend: {
+                type: "string",
+                enum: [
+                  "Improving",
+                  "Stable",
+                  "Worsening",
+                  "Unknown",
+                ],
+              },
+
+              industryImpacts: {
+                type: "array",
+
+                items: {
+                  type: "object",
+                  additionalProperties: false,
+
+                  properties: {
+                    industry: {
+                      type: "string",
+                    },
+
+                    impact: {
+                      type: "string",
+                    },
+                  },
+
+                  required: [
+                    "industry",
+                    "impact",
+                  ],
+                },
+              },
+
+              organizations: {
+                type: "array",
+
+                items: {
+                  type: "object",
+                  additionalProperties: false,
+
+                  properties: {
+                    name: {
+                      type: "string",
+                    },
+
+                    country: {
+                      type: "string",
+                    },
+
+                    website: {
+                      type: "string",
+                    },
+
+                    supplierType: {
+                      type: "string",
+                      enum: SUPPLIER_TYPES,
+                    },
+
+                    roleDescription: {
+                      type: "string",
+                    },
+
+                    relatedMaterials: {
+                      type: "array",
+                      items: {
+                        type: "string",
+                        enum: TRACKED_MATERIALS,
+                      },
+                    },
+
+                    materialRelationships: {
+                      type: "array",
+
+                      items: {
+                        type: "object",
+                        additionalProperties: false,
+
+                        properties: {
+                          material: {
+                            type: "string",
+                            enum: TRACKED_MATERIALS,
+                          },
+
+                          relationshipType: {
+                            type: "string",
+                            enum: MATERIAL_RELATIONSHIP_TYPES,
+                          },
+
+                          summary: {
+                            type: "string",
+                          },
+                        },
+
+                        required: [
+                          "material",
+                          "relationshipType",
+                          "summary",
+                        ],
+                      },
+                    },
+
+                    confidence: {
+                      type: "string",
+                      enum: [
+                        "Low",
+                        "Medium",
+                        "High",
+                      ],
+                    },
+
+                    evidenceSummary: {
+                      type: "string",
+                    },
+                  },
+
+                  required: [
+                    "name",
+                    "country",
+                    "website",
+                    "supplierType",
+                    "roleDescription",
+                    "relatedMaterials",
+                    "materialRelationships",
+                    "confidence",
+                    "evidenceSummary",
+                  ],
+                },
+              },
             },
+
+            required: [
+              "isRelevant",
+              "riskType",
+              "materials",
+              "material",
+              "title",
+              "severity",
+              "location",
+              "description",
+              "operationalImpact",
+              "operationalImpactScore",
+              "operationalImpactRationale",
+              "operationalImpactConfidence",
+              "trend",
+              "industryImpacts",
+              "organizations",
+            ],
           },
         },
-      });
+      },
+    });
 
     if (!response.output_text) {
       throw new Error(
@@ -664,13 +728,10 @@ ${safePublishedAt}
       );
     }
 
-    const result = JSON.parse(
-      response.output_text
-    );
+    const result = JSON.parse(response.output_text);
 
-    result.materials = Array.isArray(
-      result.materials
-    )
+    // Normalize tracked materials.
+    result.materials = Array.isArray(result.materials)
       ? [
           ...new Set(
             result.materials.filter((material) =>
@@ -679,6 +740,11 @@ ${safePublishedAt}
           ),
         ]
       : [];
+
+    // Validate riskType defensively.
+    if (!RISK_TYPES.includes(result.riskType)) {
+      result.riskType = "Not classified";
+    }
 
     const numericImpactScore = Number(
       result.operationalImpactScore
@@ -693,6 +759,7 @@ ${safePublishedAt}
 
     if (!result.isRelevant || result.materials.length === 0) {
       result.isRelevant = false;
+      result.riskType = "Not classified";
       result.materials = [];
       result.material = "Unknown";
       result.severity = "Unknown";
@@ -705,8 +772,7 @@ ${safePublishedAt}
       result.operationalImpactRationale =
         "The article did not qualify as a relevant tracked-material risk.";
     } else {
-      result.material =
-        result.materials.join(" and ");
+      result.material = result.materials.join(" and ");
 
       result.organizations = getCleanOrganizations(
         result.organizations,
@@ -724,8 +790,7 @@ ${safePublishedAt}
     }
 
     if (
-      typeof result.operationalImpactRationale !==
-        "string" ||
+      typeof result.operationalImpactRationale !== "string" ||
       !result.operationalImpactRationale.trim()
     ) {
       result.operationalImpactRationale =

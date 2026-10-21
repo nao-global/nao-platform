@@ -1,4 +1,3 @@
-
 const Risk = require("../models/Risk");
 const Material = require("../models/Material");
 const mongoose = require("mongoose");
@@ -12,7 +11,6 @@ const {
 const {
   generateRiskRecommendations,
 } = require("../services/recommendationService");
-
 
 // ======================================================
 // GET ALL RISKS
@@ -31,7 +29,6 @@ const getRisks = async (req, res) => {
     });
   }
 };
-
 
 // ======================================================
 // GET ONE RISK
@@ -63,7 +60,6 @@ const getRisk = async (req, res) => {
     });
   }
 };
-
 
 // ======================================================
 // SEED RISKS
@@ -98,8 +94,9 @@ const seedRisks = async (req, res) => {
       });
     }
 
-    // This deletion is retained from your existing
-    // development seed behavior.
+    // WARNING:
+    // This deletes every existing risk.
+    // Do not run this endpoint on your production database.
     await Risk.deleteMany({});
 
     const risks = await Risk.insertMany([
@@ -107,6 +104,7 @@ const seedRisks = async (req, res) => {
       {
         materialId: titanium._id,
         title: "Export Restrictions",
+        riskType: "Trade Restrictions",
         severity: "High",
         location: "China",
         description:
@@ -157,6 +155,7 @@ const seedRisks = async (req, res) => {
       {
         materialId: titanium._id,
         title: "Supplier Concentration",
+        riskType: "Supplier Risk",
         severity: "Medium",
         location: "Global",
         description:
@@ -194,6 +193,7 @@ const seedRisks = async (req, res) => {
       {
         materialId: nickel._id,
         title: "Mining Disruptions",
+        riskType: "Supply Disruption",
         severity: "High",
         location: "Indonesia",
         description:
@@ -231,6 +231,7 @@ const seedRisks = async (req, res) => {
       {
         materialId: nickel._id,
         title: "Price Volatility",
+        riskType: "Market / Price Volatility",
         severity: "Medium",
         location: "Global",
         description:
@@ -262,6 +263,7 @@ const seedRisks = async (req, res) => {
       {
         materialId: iridium._id,
         title: "Supply Shortage",
+        riskType: "Supply Shortage",
         severity: "High",
         location: "South Africa",
         description:
@@ -299,6 +301,7 @@ const seedRisks = async (req, res) => {
       {
         materialId: iridium._id,
         title: "Geopolitical Instability",
+        riskType: "Geopolitical Risk",
         severity: "Medium",
         location: "Africa",
         description:
@@ -330,6 +333,7 @@ const seedRisks = async (req, res) => {
       {
         materialId: ruthenium._id,
         title: "Price Volatility",
+        riskType: "Market / Price Volatility",
         severity: "Medium",
         location: "Global",
         description:
@@ -361,6 +365,7 @@ const seedRisks = async (req, res) => {
       {
         materialId: ruthenium._id,
         title: "Supply Constraints",
+        riskType: "Supply Disruption",
         severity: "High",
         location: "Global",
         description:
@@ -406,7 +411,6 @@ const seedRisks = async (req, res) => {
     });
   }
 };
-
 
 // ======================================================
 // CREATE RISK FROM NEWS
@@ -491,7 +495,6 @@ const createRiskFromNews = async (req, res) => {
     });
   }
 };
-
 
 // ======================================================
 // GENERATE RECOMMENDATIONS FOR ONE RISK
@@ -580,7 +583,6 @@ const generateRecommendationsForRisk = async (
     });
   }
 };
-
 
 // ======================================================
 // GENERATE RECOMMENDATIONS FOR RISKS WITHOUT ANY
@@ -704,7 +706,6 @@ const generateRecommendationsForPendingRisks =
       });
     }
   };
-
 
 // ======================================================
 // EXPORTS
