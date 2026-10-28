@@ -3,11 +3,7 @@ const Material = require("../models/Material");
 const mongoose = require("mongoose");
 
 const { analyzeNews } = require("../services/aiService");
-
-const {
-  saveRisksFromAnalysis,
-} = require("../services/riskService");
-
+const { saveRisksFromAnalysis } = require("../services/riskService");
 const {
   generateRiskRecommendations,
 } = require("../services/recommendationService");
@@ -22,9 +18,11 @@ const getRisks = async (req, res) => {
       .populate("materialId")
       .sort({ createdAt: -1 });
 
-    res.status(200).json(risks);
+    return res.status(200).json(risks);
   } catch (error) {
-    res.status(500).json({
+    console.error("Error retrieving risks:", error);
+
+    return res.status(500).json({
       error: error.message,
     });
   }
@@ -44,8 +42,7 @@ const getRisk = async (req, res) => {
       });
     }
 
-    const risk = await Risk.findById(id)
-      .populate("materialId");
+    const risk = await Risk.findById(id).populate("materialId");
 
     if (!risk) {
       return res.status(404).json({
@@ -53,22 +50,27 @@ const getRisk = async (req, res) => {
       });
     }
 
-    res.status(200).json(risk);
+    return res.status(200).json(risk);
   } catch (error) {
-    res.status(500).json({
+    console.error("Error retrieving risk:", error);
+
+    return res.status(500).json({
       error: error.message,
     });
   }
 };
 
 // ======================================================
-// SEED RISKS
+// SEED RISKS SAFELY
 // ======================================================
-
-// WARNING:
-// This development endpoint replaces all existing risks.
-// Do not call it on a database containing risks you need
-// to keep.
+//
+// This development endpoint is additive.
+// It does NOT delete or overwrite existing risks.
+//
+// A sample risk is considered present when the same
+// material already has a risk with the same title.
+//
+// Existing risk IDs and records are preserved.
 
 const seedRisks = async (req, res) => {
   try {
@@ -94,12 +96,7 @@ const seedRisks = async (req, res) => {
       });
     }
 
-    // WARNING:
-    // This deletes every existing risk.
-    // Do not run this endpoint on your production database.
-    await Risk.deleteMany({});
-
-    const risks = await Risk.insertMany([
+    const seedRiskData = [
       // TITANIUM: Export restrictions
       {
         materialId: titanium._id,
@@ -398,15 +395,40 @@ const seedRisks = async (req, res) => {
           },
         ],
       },
-    ]);
+    ];
 
-    res.status(200).json({
-      message: "Seed risks created successfully.",
+    const createdRisks = [];
+    const existingRisks = [];
+
+    for (const seedRisk of seedRiskData) {
+      const existingRisk = await Risk.findOne({
+        materialId: seedRisk.materialId,
+        title: seedRisk.title,
+      });
+
+      if (existingRisk) {
+        existingRisks.push(existingRisk);
+        continue;
+      }
+
+      const createdRisk = await Risk.create(seedRisk);
+      createdRisks.push(createdRisk);
+    }
+
+    const risks = [...existingRisks, ...createdRisks];
+
+    return res.status(200).json({
+      message:
+        "Seed risks ensured without deleting existing records.",
       count: risks.length,
+      createdCount: createdRisks.length,
+      existingCount: existingRisks.length,
       risks,
     });
   } catch (error) {
-    res.status(500).json({
+    console.error("Error seeding risks:", error);
+
+    return res.status(500).json({
       error: error.message,
     });
   }
@@ -435,9 +457,7 @@ const createRiskFromNews = async (req, res) => {
         title: article.title,
         description: article.description,
         content: article.content,
-        source:
-          article.source?.name ||
-          article.source,
+        source: article.source?.name || article.source,
         url: article.url,
         publishedAt: article.publishedAt,
       });
@@ -471,25 +491,22 @@ const createRiskFromNews = async (req, res) => {
       });
     }
 
-    res.status(
-      result.saved.length > 0 ? 201 : 200
-    ).json({
-      message:
-        result.saved.length > 0
-          ? "Risk(s) saved successfully."
-          : "Risk(s) already exist.",
-      saved: result.saved,
-      existing: result.existing,
-      skipped: result.skipped,
-      aiAnalysis: analysis,
-    });
+    return res
+      .status(result.saved.length > 0 ? 201 : 200)
+      .json({
+        message:
+          result.saved.length > 0
+            ? "Risk(s) saved successfully."
+            : "Risk(s) already exist.",
+        saved: result.saved,
+        existing: result.existing,
+        skipped: result.skipped,
+        aiAnalysis: analysis,
+      });
   } catch (error) {
-    console.error(
-      "Create risk from news error:",
-      error
-    );
+    console.error("Create risk from news error:", error);
 
-    res.status(500).json({
+    return res.status(500).json({
       message: "Failed to create risk from news article.",
       error: error.message,
     });
@@ -500,10 +517,7 @@ const createRiskFromNews = async (req, res) => {
 // GENERATE RECOMMENDATIONS FOR ONE RISK
 // ======================================================
 
-const generateRecommendationsForRisk = async (
-  req,
-  res
-) => {
+const generateRecommendationsForRisk = async (req, res) => {
   try {
     const { id } = req.params;
 
@@ -513,8 +527,7 @@ const generateRecommendationsForRisk = async (
       });
     }
 
-    const risk = await Risk.findById(id)
-      .populate("materialId");
+    const risk = await Risk.findById(id).populate("materialId");
 
     if (!risk) {
       return res.status(404).json({
@@ -524,8 +537,7 @@ const generateRecommendationsForRisk = async (
 
     if (!risk.materialId || !risk.materialId.name) {
       return res.status(422).json({
-        message:
-          "This risk is not linked to a valid material.",
+        message: "This risk is not linked to a valid material.",
       });
     }
 
@@ -533,12 +545,9 @@ const generateRecommendationsForRisk = async (
       req.query.force === "true" ||
       req.body?.force === true;
 
-    // Protect existing recommendations from being replaced
-    // accidentally. Use ?force=true to regenerate them.
-    if (
-      risk.recommendations?.length > 0 &&
-      !force
-    ) {
+    // Protect existing recommendations from accidental replacement.
+    // Use ?force=true to regenerate them.
+    if (risk.recommendations?.length > 0 && !force) {
       return res.status(200).json({
         message:
           "This risk already has recommendations. Use ?force=true to regenerate them.",
@@ -547,38 +556,29 @@ const generateRecommendationsForRisk = async (
       });
     }
 
-    const recommendations =
-      await generateRiskRecommendations({
-        risk,
-        material: risk.materialId,
-      });
+    const recommendations = await generateRiskRecommendations({
+      risk,
+      material: risk.materialId,
+    });
 
-    // Save the AI-generated recommendations into
-    // the existing recommendations array.
+    // Save generated recommendations into the existing array.
     risk.recommendations = recommendations;
-
     await risk.save();
 
-    const updatedRisk = await Risk.findById(
-      risk._id
-    ).populate("materialId");
+    const updatedRisk = await Risk.findById(risk._id)
+      .populate("materialId");
 
-    res.status(200).json({
-      message:
-        "Recommendations generated and saved successfully.",
+    return res.status(200).json({
+      message: "Recommendations generated and saved successfully.",
       generated: true,
       count: recommendations.length,
       risk: updatedRisk,
     });
   } catch (error) {
-    console.error(
-      "Generate recommendations error:",
-      error
-    );
+    console.error("Generate recommendations error:", error);
 
-    res.status(500).json({
-      message:
-        "Failed to generate recommendations.",
+    return res.status(500).json({
+      message: "Failed to generate recommendations.",
       error: error.message,
     });
   }
@@ -588,124 +588,109 @@ const generateRecommendationsForRisk = async (
 // GENERATE RECOMMENDATIONS FOR RISKS WITHOUT ANY
 // ======================================================
 
-const generateRecommendationsForPendingRisks =
-  async (req, res) => {
-    try {
-      const requestedLimit = Number(
-        req.body?.limit ??
-        req.query.limit ??
-        5
-      );
+const generateRecommendationsForPendingRisks = async (req, res) => {
+  try {
+    const requestedLimit = Number(
+      req.body?.limit ??
+      req.query.limit ??
+      5
+    );
 
-      if (
-        !Number.isInteger(requestedLimit) ||
-        requestedLimit < 1
-      ) {
-        return res.status(400).json({
-          message:
-            "Limit must be a positive whole number.",
-        });
-      }
-
-      // Limit one request to a maximum of 20 risks
-      // to control API cost and execution time.
-      const limit = Math.min(
-        requestedLimit,
-        20
-      );
-
-      const risks = await Risk.find({
-        $or: [
-          {
-            recommendations: {
-              $exists: false,
-            },
-          },
-          {
-            recommendations: {
-              $size: 0,
-            },
-          },
-        ],
-      })
-        .populate("materialId")
-        .sort({ createdAt: -1 })
-        .limit(limit);
-
-      if (risks.length === 0) {
-        return res.status(200).json({
-          message:
-            "No risks need recommendations.",
-          found: 0,
-          generated: [],
-          failed: [],
-        });
-      }
-
-      const generated = [];
-      const failed = [];
-
-      // Process sequentially to avoid sending a large
-      // burst of OpenAI requests.
-      for (const risk of risks) {
-        try {
-          if (
-            !risk.materialId ||
-            !risk.materialId.name
-          ) {
-            throw new Error(
-              "Risk is not linked to a valid material."
-            );
-          }
-
-          const recommendations =
-            await generateRiskRecommendations({
-              risk,
-              material: risk.materialId,
-            });
-
-          risk.recommendations =
-            recommendations;
-
-          await risk.save();
-
-          generated.push({
-            riskId: risk._id,
-            title: risk.title,
-            material: risk.materialId.name,
-            recommendations,
-          });
-        } catch (error) {
-          failed.push({
-            riskId: risk._id,
-            title: risk.title,
-            error: error.message,
-          });
-        }
-      }
-
-      res.status(200).json({
-        message:
-          "Pending-risk recommendation generation finished.",
-        found: risks.length,
-        generatedCount: generated.length,
-        failedCount: failed.length,
-        generated,
-        failed,
-      });
-    } catch (error) {
-      console.error(
-        "Bulk recommendation generation error:",
-        error
-      );
-
-      res.status(500).json({
-        message:
-          "Failed to generate recommendations for pending risks.",
-        error: error.message,
+    if (
+      !Number.isInteger(requestedLimit) ||
+      requestedLimit < 1
+    ) {
+      return res.status(400).json({
+        message: "Limit must be a positive whole number.",
       });
     }
-  };
+
+    // Limit one request to a maximum of 20 risks
+    // to control API cost and execution time.
+    const limit = Math.min(requestedLimit, 20);
+
+    const risks = await Risk.find({
+      $or: [
+        {
+          recommendations: {
+            $exists: false,
+          },
+        },
+        {
+          recommendations: {
+            $size: 0,
+          },
+        },
+      ],
+    })
+      .populate("materialId")
+      .sort({ createdAt: -1 })
+      .limit(limit);
+
+    if (risks.length === 0) {
+      return res.status(200).json({
+        message: "No risks need recommendations.",
+        found: 0,
+        generated: [],
+        failed: [],
+      });
+    }
+
+    const generated = [];
+    const failed = [];
+
+    // Process sequentially to avoid sending a large
+    // burst of OpenAI requests.
+    for (const risk of risks) {
+      try {
+        if (!risk.materialId || !risk.materialId.name) {
+          throw new Error(
+            "Risk is not linked to a valid material."
+          );
+        }
+
+        const recommendations = await generateRiskRecommendations({
+          risk,
+          material: risk.materialId,
+        });
+
+        risk.recommendations = recommendations;
+        await risk.save();
+
+        generated.push({
+          riskId: risk._id,
+          title: risk.title,
+          material: risk.materialId.name,
+          recommendations,
+        });
+      } catch (error) {
+        failed.push({
+          riskId: risk._id,
+          title: risk.title,
+          error: error.message,
+        });
+      }
+    }
+
+    return res.status(200).json({
+      message:
+        "Pending-risk recommendation generation finished.",
+      found: risks.length,
+      generatedCount: generated.length,
+      failedCount: failed.length,
+      generated,
+      failed,
+    });
+  } catch (error) {
+    console.error("Bulk recommendation generation error:", error);
+
+    return res.status(500).json({
+      message:
+        "Failed to generate recommendations for pending risks.",
+      error: error.message,
+    });
+  }
+};
 
 // ======================================================
 // EXPORTS

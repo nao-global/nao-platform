@@ -34,11 +34,39 @@ const router = express.Router();
 
 // ======================================================
 // DEVELOPMENT SEED ROUTE
-// WARNING: Deletes and recreates existing risk records.
-// Do not run this on populated data you need to retain.
+// ======================================================
+//
+// Seeding is allowed only when BOTH conditions are true:
+// 1. NODE_ENV is explicitly set to "development".
+// 2. ENABLE_DEVELOPMENT_SEED_ROUTES is set to "true".
+//
+// The seed controller must also remain non-destructive.
+// Never enable this route in production.
+//
 // ======================================================
 
-router.post("/seed", seedRisks);
+const developmentSeedGuard = (req, res, next) => {
+  const isDevelopment =
+    process.env.NODE_ENV === "development";
+
+  const seedRoutesEnabled =
+    process.env.ENABLE_DEVELOPMENT_SEED_ROUTES === "true";
+
+  if (!isDevelopment || !seedRoutesEnabled) {
+    return res.status(403).json({
+      message:
+        "Risk seeding is disabled. Enable it only in local development.",
+    });
+  }
+
+  return next();
+};
+
+router.post(
+  "/seed",
+  developmentSeedGuard,
+  seedRisks
+);
 
 // ======================================================
 // RISK SCORING

@@ -1,7 +1,16 @@
-
+const crypto = require("crypto");
 const News = require("../models/News");
+const NewsProcessingState = require("../models/NewsProcessingState");
+
 const { analyzeNews } = require("../services/aiService");
 const { saveRisksFromAnalysis } = require("../services/riskService");
+
+const {
+  isArticleEligible,
+  claimArticle,
+  finishArticle,
+  getArticleTrackingData,
+} = require("../services/processedArticleService");
 
 // ======================================================
 // BASIC NEWS CRUD
@@ -10,10 +19,12 @@ const { saveRisksFromAnalysis } = require("../services/riskService");
 const getAllNews = async (req, res) => {
   try {
     const news = await News.find({}).sort({ publishedAt: -1 });
-    res.status(200).json(news);
+    return res.status(200).json(news);
   } catch (error) {
-    console.log(error);
-    res.status(500).json({ message: "Server error while fetching news." });
+    console.error(error);
+    return res.status(500).json({
+      message: "Server error while fetching news.",
+    });
   }
 };
 
@@ -22,23 +33,29 @@ const getNewsById = async (req, res) => {
     const news = await News.findById(req.params.id);
 
     if (!news) {
-      return res.status(404).json({ message: "News article not found." });
+      return res.status(404).json({
+        message: "News article not found.",
+      });
     }
 
-    res.status(200).json(news);
+    return res.status(200).json(news);
   } catch (error) {
-    console.log(error);
-    res.status(500).json({ message: "Server error while fetching news." });
+    console.error(error);
+    return res.status(500).json({
+      message: "Server error while fetching news.",
+    });
   }
 };
 
 const createNews = async (req, res) => {
   try {
     const news = await News.create(req.body);
-    res.status(201).json(news);
+    return res.status(201).json(news);
   } catch (error) {
-    console.log(error);
-    res.status(500).json({ message: "Server error while creating news." });
+    console.error(error);
+    return res.status(500).json({
+      message: "Server error while creating news.",
+    });
   }
 };
 
@@ -46,7 +63,8 @@ const createNews = async (req, res) => {
 // HELPERS
 // ======================================================
 
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const sleep = (ms) =>
+  new Promise((resolve) => setTimeout(resolve, ms));
 
 const normalize = (value) =>
   String(value ?? "")
@@ -90,7 +108,9 @@ const fetchNewsApiWithRetry = async (url, attempts = 3) => {
       try {
         data = JSON.parse(rawBody);
       } catch {
-        data = { message: rawBody || "Invalid JSON response" };
+        data = {
+          message: rawBody || "Invalid JSON response",
+        };
       }
 
       if (response.ok) {
@@ -133,11 +153,10 @@ const fetchNewsApiWithRetry = async (url, attempts = 3) => {
 };
 
 // ======================================================
-// MATERIALS
+// MATERIALS AND SEARCH QUERIES
 // ======================================================
 
 const materials = ["nickel", "titanium", "iridium", "ruthenium"];
-
 
 const materialSearches = {
   nickel: [
@@ -222,7 +241,6 @@ const penaltyTerms = [
   "investor", "investors", "share price",
 ];
 
-
 const scoreArticle = (article, material) => {
   const title = normalize(article.title);
   const description = normalize(article.description);
@@ -233,16 +251,12 @@ const scoreArticle = (article, material) => {
     fullText.includes(term)
   );
 
-  if (excludedTerm) {
-    return null;
-  }
+  if (excludedTerm) return null;
 
   const materialInTitle = wordMatch(title, material);
   const materialMentions = countMatches(fullText, [material]);
 
-  if (materialMentions === 0) {
-    return null;
-  }
+  if (materialMentions === 0) return null;
 
   const matchedSignals = materialSignals[material].filter((term) =>
     wordMatch(fullText, term)
@@ -252,9 +266,7 @@ const scoreArticle = (article, material) => {
     wordMatch(title, term)
   );
 
-  if (matchedSignals.length === 0) {
-    return null;
-  }
+  if (matchedSignals.length === 0) return null;
 
   const penaltyMatches = countMatches(fullText, penaltyTerms);
 
@@ -263,9 +275,7 @@ const scoreArticle = (article, material) => {
   score += Math.min(titleSignals.length * 2, 4);
   score -= penaltyMatches;
 
-  if (score < 5) {
-    return null;
-  }
+  if (score < 5) return null;
 
   return {
     score,
@@ -304,10 +314,11 @@ const fetchExternalNews = async (req, res) => {
       `&language=en&sortBy=relevancy&pageSize=50`;
 
     const data = await fetchNewsApiWithRetry(url);
-    res.status(200).json(data);
+    return res.status(200).json(data);
   } catch (error) {
-    console.log(error);
-    res.status(500).json({
+    console.error(error);
+
+    return res.status(500).json({
       message: "Server error while fetching external news.",
       error: error.message,
     });
@@ -315,15 +326,126 @@ const fetchExternalNews = async (req, res) => {
 };
 
 // ======================================================
+// SCHEDULED PROCESSING STATE
+// ======================================================
+
+const NEWS_PROCESSING_STATE_ID = "external-news-processing";
+const NEWS_PROCESSING_INTERVAL_MS = 30 * 60 * 60 * 1000;
+const NEWS_PROCESSING_LOCK_MS = 2 * 60 * 60 * 1000;
+
+const claimScheduledRun = async () => {
+  const now = new Date();
+
+  const existingState = await NewsProcessingState.findById(
+    NEWS_PROCESSING_STATE_ID
+  );
+
+  if (existingState?.lastScheduledRunAt) {
+    const nextDueAt = new Date(
+      existingState.lastScheduledRunAt.getTime() +
+        NEWS_PROCESSING_INTERVAL_MS
+    );
+
+    if (now < nextDueAt) {
+      return {
+        shouldRun: false,
+        reason: "The 30-hour processing interval has not elapsed.",
+        nextDueAt,
+        lastScheduledRunAt: existingState.lastScheduledRunAt,
+      };
+    }
+  }
+
+  const token = crypto.randomUUID();
+
+  try {
+    const state = await NewsProcessingState.findOneAndUpdate(
+      {
+        _id: NEWS_PROCESSING_STATE_ID,
+        $or: [
+          { lockUntil: null },
+          { lockUntil: { $exists: false } },
+          { lockUntil: { $lte: now } },
+        ],
+      },
+      {
+        $set: {
+          lockToken: token,
+          lockUntil: new Date(
+            now.getTime() + NEWS_PROCESSING_LOCK_MS
+          ),
+          lastStartedAt: now,
+          status: "Running",
+          lastError: "",
+        },
+      },
+      {
+        new: true,
+        upsert: true,
+        setDefaultsOnInsert: true,
+      }
+    );
+
+    if (!state || state.lockToken !== token) {
+      return {
+        shouldRun: false,
+        reason: "Another scheduled processing run is active.",
+      };
+    }
+
+    return { shouldRun: true, token, startedAt: now };
+  } catch (error) {
+    if (error.code === 11000) {
+      return {
+        shouldRun: false,
+        reason: "Another scheduled processing run is active.",
+      };
+    }
+
+    throw error;
+  }
+};
+
+const finishScheduledRun = async (
+  token,
+  { status, error = "" }
+) => {
+  if (!token) return;
+
+  const now = new Date();
+
+  const update = {
+    lastFinishedAt: now,
+    status,
+    lastError: String(error || "").slice(0, 2000),
+    lockToken: null,
+    lockUntil: null,
+  };
+
+  // Only a fully successful run advances the 30-hour clock.
+  // A partial or failed run can be retried on the next hourly check.
+  if (status === "Succeeded") {
+    update.lastScheduledRunAt = now;
+  }
+
+  await NewsProcessingState.updateOne(
+    {
+      _id: NEWS_PROCESSING_STATE_ID,
+      lockToken: token,
+    },
+    { $set: update }
+  );
+};
+
+// ======================================================
 // PROCESS EXTERNAL NEWS
 // ======================================================
 
 const processExternalNews = async (req, res) => {
-  try {
-    // Increased from 4 to 10 articles per material.
-    const maxPerMaterial = 10;
+  const scheduledRunToken = req.scheduledRunToken || null;
 
-    // Increased from 16 to 40 unique articles sent to AI.
+  try {
+    const maxPerMaterial = 10;
     const maxAiCandidates = 40;
 
     const fetchErrors = [];
@@ -336,7 +458,7 @@ const processExternalNews = async (req, res) => {
 
     let totalDiscoveredCandidates = 0;
 
-    // 1. DISCOVERY
+    // 1. DISCOVER ARTICLES
     for (const material of materials) {
       for (const query of materialSearches[material]) {
         try {
@@ -350,9 +472,7 @@ const processExternalNews = async (req, res) => {
           for (const article of data.articles || []) {
             const scored = scoreArticle(article, material);
 
-            if (!scored) {
-              continue;
-            }
+            if (!scored) continue;
 
             totalDiscoveredCandidates++;
 
@@ -367,7 +487,10 @@ const processExternalNews = async (req, res) => {
 
             const existing = materialBuckets[material].get(key);
 
-            if (!existing || candidate.localScore > existing.localScore) {
+            if (
+              !existing ||
+              candidate.localScore > existing.localScore
+            ) {
               materialBuckets[material].set(key, candidate);
             }
           }
@@ -381,7 +504,7 @@ const processExternalNews = async (req, res) => {
       }
     }
 
-    // 2. TOP CANDIDATES PER MATERIAL
+    // 2. SELECT THE TOP CANDIDATES PER MATERIAL
     const topByMaterial = {};
 
     for (const material of materials) {
@@ -392,7 +515,7 @@ const processExternalNews = async (req, res) => {
         .slice(0, maxPerMaterial);
     }
 
-    // 3. CROSS-MATERIAL MERGE
+    // 3. MERGE DUPLICATES ACROSS MATERIAL SEARCHES
     const uniqueArticles = new Map();
 
     for (const material of materials) {
@@ -426,13 +549,26 @@ const processExternalNews = async (req, res) => {
       }
     }
 
-    // 4. AI QUEUE
-    const aiCandidates = [...uniqueArticles.values()]
-      .sort((a, b) => b.localScore - a.localScore)
-      .slice(0, maxAiCandidates);
+    // 4. FILTER OUT PREVIOUSLY COMPLETED ARTICLES BEFORE THE AI LIMIT.
+    // This allows newer eligible articles to fill the queue.
+    const rankedCandidates = [...uniqueArticles.values()].sort(
+      (a, b) => b.localScore - a.localScore
+    );
 
-      
-    // 5. AI ANALYSIS + RISK PERSISTENCE
+    const aiCandidates = [];
+    let alreadyTrackedSkipped = 0;
+
+    for (const candidate of rankedCandidates) {
+      if (await isArticleEligible(candidate.article)) {
+        aiCandidates.push(candidate);
+      } else {
+        alreadyTrackedSkipped++;
+      }
+
+      if (aiCandidates.length >= maxAiCandidates) break;
+    }
+
+    // 5. AI ANALYSIS, HISTORY TRACKING, AND RISK SAVING
     const results = [];
 
     let aiRelevant = 0;
@@ -441,9 +577,28 @@ const processExternalNews = async (req, res) => {
     let risksAlreadyExist = 0;
     let risksSkipped = 0;
     let riskPersistenceErrors = 0;
+    let aiAttempts = 0;
+    let claimRaceSkipped = 0;
 
     for (const candidate of aiCandidates) {
+      let trackingData = getArticleTrackingData(
+        candidate.article
+      );
+
       try {
+        // Claim the article before using AI. This is the final
+        // database-backed check if two requests overlap.
+        const claim = await claimArticle(candidate.article);
+
+        trackingData = claim.trackingData || trackingData;
+
+        if (!claim.claimed) {
+          claimRaceSkipped++;
+          continue;
+        }
+
+        aiAttempts++;
+
         const aiAnalysis = await analyzeNews({
           title: candidate.article.title,
           description: candidate.article.description,
@@ -454,54 +609,102 @@ const processExternalNews = async (req, res) => {
           possibleMaterials: candidate.possibleMaterials,
         });
 
-        // AI DECISION
-        if (aiAnalysis?.isRelevant === true) {
-          aiRelevant++;
-        } else {
+        // 5A. Articles the AI considers irrelevant are remembered too.
+        if (aiAnalysis?.isRelevant !== true) {
           aiRejected++;
+
+          await finishArticle({
+            canonicalUrl: trackingData.canonicalUrl,
+            status: "Skipped",
+            lastError:
+              "AI classified this article as not relevant to NAO risk intelligence.",
+          });
+
+          results.push({
+            possibleMaterials: candidate.possibleMaterials,
+            localScore: candidate.localScore,
+            localSignalsByMaterial:
+              candidate.localSignalsByMaterial,
+            article: candidate.article,
+            aiAnalysis,
+            processingStatus: "Skipped",
+            riskPersistence: null,
+            riskPersistenceError: null,
+          });
+
+          continue;
         }
 
-        // RISK PERSISTENCE
+        // 5B. Relevant articles proceed to the existing risk service.
+        aiRelevant++;
+
         let riskPersistence = null;
         let riskPersistenceError = null;
+        let persistenceSucceeded = true;
+        let riskIds = [];
 
-        // Only relevant AI results are sent to MongoDB.
-        if (aiAnalysis?.isRelevant === true) {
-          try {
-            const persistence = await saveRisksFromAnalysis({
-              aiAnalysis,
-              article: candidate.article,
-            });
+        try {
+          const persistence = await saveRisksFromAnalysis({
+            aiAnalysis,
+            article: candidate.article,
+          });
 
-            risksSaved += persistence.saved.length;
-            risksAlreadyExist += persistence.existing.length;
-            risksSkipped += persistence.skipped.length;
+          risksSaved += persistence.saved.length;
+          risksAlreadyExist += persistence.existing.length;
+          risksSkipped += persistence.skipped.length;
 
-            riskPersistence = {
-              savedCount: persistence.saved.length,
-              savedRiskIds: persistence.saved.map((risk) => risk._id),
-              existingCount: persistence.existing.length,
-              existingRiskIds: persistence.existing.map((risk) => risk._id),
-              skipped: persistence.skipped,
-            };
-          } catch (error) {
-            riskPersistenceErrors++;
-            riskPersistenceError = error.message;
+          const savedRiskIds = persistence.saved.map(
+            (risk) => risk._id
+          );
 
-            console.log(
-              `Risk persistence failed for "${candidate.article.title}":`,
-              error.message
-            );
-          }
+          const existingRiskIds = persistence.existing.map(
+            (risk) => risk._id
+          );
+
+          riskIds = [
+            ...new Set(
+              [...savedRiskIds, ...existingRiskIds].map(String)
+            ),
+          ];
+
+          riskPersistence = {
+            savedCount: persistence.saved.length,
+            savedRiskIds,
+            existingCount: persistence.existing.length,
+            existingRiskIds,
+            skipped: persistence.skipped,
+          };
+        } catch (error) {
+          persistenceSucceeded = false;
+          riskPersistenceErrors++;
+          riskPersistenceError = error.message;
+
+          console.error(
+            `Risk persistence failed for "${candidate.article.title}":`,
+            error.message
+          );
         }
 
-        // STORE RESULT
+        // Do not mark the article completed if saving risks failed.
+        const processingStatus = persistenceSucceeded
+          ? "Processed"
+          : "Failed";
+
+        await finishArticle({
+          canonicalUrl: trackingData.canonicalUrl,
+          status: processingStatus,
+          lastError: riskPersistenceError || "",
+          riskIds,
+        });
+
         results.push({
           possibleMaterials: candidate.possibleMaterials,
           localScore: candidate.localScore,
-          localSignalsByMaterial: candidate.localSignalsByMaterial,
+          localSignalsByMaterial:
+            candidate.localSignalsByMaterial,
           article: candidate.article,
           aiAnalysis,
+          processingStatus,
           riskPersistence,
           riskPersistenceError,
         });
@@ -515,39 +718,166 @@ const processExternalNews = async (req, res) => {
           cause: error?.cause?.message || null,
         };
 
+        // Keep failed articles retryable on a later run.
+        try {
+          await finishArticle({
+            canonicalUrl: trackingData.canonicalUrl,
+            status: "Failed",
+            lastError: error.message,
+          });
+        } catch (trackingError) {
+          console.error(
+            "Could not update processed-article failure status:",
+            trackingError.message
+          );
+        }
+
         aiErrors.push(aiError);
-        console.log("AI analysis failed:", aiError);
+        console.error("AI/news processing failed:", aiError);
       }
     }
 
-    // 6. RESPONSE
-    res.status(200).json({
-      message: "News filtering, AI analysis, and risk persistence completed.",
+    // 6. UPDATE SCHEDULE STATUS
+    const runHadErrors =
+      fetchErrors.length > 0 ||
+      aiErrors.length > 0 ||
+      riskPersistenceErrors > 0;
+
+    const scheduleStatus = runHadErrors
+      ? "Partial"
+      : "Succeeded";
+
+    if (scheduledRunToken) {
+      const details = runHadErrors
+        ? JSON.stringify({
+            fetchErrors: fetchErrors.length,
+            aiErrors: aiErrors.length,
+            riskPersistenceErrors,
+          })
+        : "";
+
+      await finishScheduledRun(scheduledRunToken, {
+        status: scheduleStatus,
+        error: details,
+      });
+    }
+
+    // 7. RESPONSE
+    return res.status(200).json({
+      message:
+        "News discovery, deduplication, AI analysis, and risk persistence completed.",
+
       totalDiscoveredCandidates,
       candidatesBeforeAI: uniqueArticles.size,
-      candidatesSentToAI: aiCandidates.length,
-      aiAttempts: aiCandidates.length - aiErrors.length,
+      eligibleCandidatesSelected: aiCandidates.length,
+      candidatesSentToAI: aiAttempts,
+      aiAttempts,
+      alreadyTrackedSkipped,
+      claimRaceSkipped,
+
       aiRelevant,
       aiRejected,
+
       risksSaved,
       risksAlreadyExist,
       risksSkipped,
       riskPersistenceErrors,
+
+      schedule: scheduledRunToken
+        ? {
+            status: scheduleStatus,
+            intervalHours: 30,
+          }
+        : null,
+
       candidatesByMaterial: Object.fromEntries(
         materials.map((material) => [
           material,
           topByMaterial[material].length,
         ])
       ),
+
       fetchErrors,
       aiErrors,
       results,
     });
   } catch (error) {
-    console.log(error);
+    console.error("External news processing failed:", error);
 
-    res.status(500).json({
+    if (scheduledRunToken) {
+      try {
+        await finishScheduledRun(scheduledRunToken, {
+          status: "Failed",
+          error: error.message,
+        });
+      } catch (stateError) {
+        console.error(
+          "Could not update scheduled-run state:",
+          stateError.message
+        );
+      }
+    }
+
+    return res.status(500).json({
       message: "Server error while processing external news.",
+      error: error.message,
+    });
+  }
+};
+
+// ======================================================
+// PROTECTED SCHEDULED ENDPOINT
+// ======================================================
+
+const processScheduledExternalNews = async (req, res) => {
+  const expectedSecret = process.env.NEWS_CRON_SECRET;
+  const providedSecret = req.get("x-cron-secret") || "";
+
+  if (!expectedSecret) {
+    return res.status(503).json({
+      message:
+        "Scheduled news processing is not configured on this server.",
+    });
+  }
+
+  const receivedBuffer = Buffer.from(providedSecret);
+  const expectedBuffer = Buffer.from(expectedSecret);
+
+  const authorized =
+    receivedBuffer.length === expectedBuffer.length &&
+    receivedBuffer.length > 0 &&
+    crypto.timingSafeEqual(receivedBuffer, expectedBuffer);
+
+  if (!authorized) {
+    return res.status(401).json({
+      message: "Unauthorized scheduled request.",
+    });
+  }
+
+  try {
+    const claim = await claimScheduledRun();
+
+    if (!claim.shouldRun) {
+      return res.status(200).json({
+        message: "Scheduled news processing was skipped.",
+        skipped: true,
+        reason: claim.reason,
+        nextDueAt: claim.nextDueAt || null,
+        lastScheduledRunAt:
+          claim.lastScheduledRunAt || null,
+      });
+    }
+
+    req.scheduledRunToken = claim.token;
+    return processExternalNews(req, res);
+  } catch (error) {
+    console.error(
+      "Unable to start scheduled news processing:",
+      error
+    );
+
+    return res.status(500).json({
+      message: "Could not start scheduled news processing.",
       error: error.message,
     });
   }
@@ -563,4 +893,5 @@ module.exports = {
   createNews,
   fetchExternalNews,
   processExternalNews,
+  processScheduledExternalNews,
 };
