@@ -16,12 +16,30 @@ import {
   FaIndustry,
 } from "react-icons/fa";
 
-const API_URL = "https://nao-ysu5.onrender.com/api/risks";
+const API_BASE =
+  import.meta.env.VITE_API_BASE_URL ||
+  "https://nao-ysu5.onrender.com/api";
+
+const API_URL = `${API_BASE}/risks`;
+
+const COMPANY_EXPOSURE_URL =
+  `${API_BASE}/company-exposure/aerotech-titanium-demo`;
 
 function getRiskList(data) {
   if (Array.isArray(data)) return data;
   if (Array.isArray(data?.risks)) return data.risks;
   return [];
+}
+
+function normalizeId(value) {
+  if (!value) return null;
+
+  if (typeof value === "object") {
+    const id = value._id || value.id;
+    return id ? String(id) : null;
+  }
+
+  return String(value);
 }
 
 function titleCase(value) {
@@ -48,13 +66,18 @@ function getTrendSymbol(trend) {
 }
 
 function getMaterialName(risk) {
-  const material = risk?.materialId;
+  const material = risk?.materialId || risk?.material;
 
-  if (typeof material === "object" && material?.name) {
-    return material.name;
+  if (typeof material === "object" && material) {
+    return (
+      material.name ||
+      material.materialName ||
+      risk?.materialName ||
+      "Not linked"
+    );
   }
 
-  return "Not linked";
+  return risk?.materialName || "Not linked";
 }
 
 function RiskDetails() {
@@ -62,8 +85,15 @@ function RiskDetails() {
   const navigate = useNavigate();
 
   const [risk, setRisk] = useState(null);
+  const [companyExposure, setCompanyExposure] = useState(null);
+
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [exposureWarning, setExposureWarning] = useState("");
+
+  // ======================================================
+  // FETCH THE SELECTED RISK AND AEROTECH DEMO EXPOSURE
+  // ======================================================
 
   useEffect(() => {
     let cancelled = false;
@@ -71,17 +101,29 @@ function RiskDetails() {
     async function fetchSelectedRisk() {
       setLoading(true);
       setError("");
+      setExposureWarning("");
       setRisk(null);
+      setCompanyExposure(null);
 
       try {
-        const response = await axios.get(API_URL);
-        const allRisks = getRiskList(response.data);
-
-        const selectedRisk = allRisks.find(
-          (item) => String(item._id) === String(id)
-        );
+        const [riskResult, exposureResult] =
+          await Promise.allSettled([
+            axios.get(API_URL),
+            axios.get(COMPANY_EXPOSURE_URL),
+          ]);
 
         if (cancelled) return;
+
+        // The risk record is required for this page.
+        if (riskResult.status !== "fulfilled") {
+          throw riskResult.reason;
+        }
+
+        const allRisks = getRiskList(riskResult.value.data);
+
+        const selectedRisk = allRisks.find(
+          (item) => normalizeId(item._id) === String(id)
+        );
 
         if (!selectedRisk) {
           setError(
@@ -91,6 +133,25 @@ function RiskDetails() {
         }
 
         setRisk(selectedRisk);
+
+        // Exposure is supplementary. Its failure should not prevent
+        // the individual risk details from being displayed.
+        if (exposureResult.status === "fulfilled") {
+          const data = exposureResult.value.data;
+
+          setCompanyExposure(
+            data?.companyExposure || data || null
+          );
+        } else {
+          console.warn(
+            "Could not load AeroTech demo exposure:",
+            exposureResult.reason
+          );
+
+          setExposureWarning(
+            "AeroTech demo recommendations could not be loaded. Recommendations recorded directly against this risk are still available."
+          );
+        }
       } catch (err) {
         console.error("Failed to load risk details:", err);
 
@@ -113,17 +174,59 @@ function RiskDetails() {
     };
   }, [id]);
 
+  // ======================================================
+  // RISK INFORMATION
+  // ======================================================
+
   const industryImpacts = Array.isArray(risk?.industryImpacts)
     ? risk.industryImpacts
     : [];
 
-  const recommendations = Array.isArray(risk?.recommendations)
+  const riskRecommendations = Array.isArray(risk?.recommendations)
     ? risk.recommendations
     : [];
 
   const supplierExposures = Array.isArray(risk?.supplierExposures)
     ? risk.supplierExposures
     : [];
+
+  // ======================================================
+  // MATCH THE RISK TO THE AEROTECH EXPOSURE RECORD
+  // ======================================================
+
+  const linkedRiskId = normalizeId(companyExposure?.riskId);
+  const selectedRiskId = normalizeId(risk?._id);
+
+  const isAeroTechLinkedRisk = Boolean(
+    selectedRiskId &&
+      linkedRiskId &&
+      selectedRiskId === linkedRiskId
+  );
+
+  const companyRecommendations = Array.isArray(
+    companyExposure?.recommendations
+  )
+    ? companyExposure.recommendations
+    : [];
+
+  // Prefer recommendations attached to the risk itself.
+  // Only fall back to the company record when the risk ID matches
+  // the exact risk explicitly linked to that company record.
+  const recommendations =
+    riskRecommendations.length > 0
+      ? riskRecommendations
+      : isAeroTechLinkedRisk
+        ? companyRecommendations
+        : [];
+
+  const usingCompanyRecommendations =
+    riskRecommendations.length === 0 &&
+    isAeroTechLinkedRisk &&
+    companyRecommendations.length > 0;
+
+  // ======================================================
+  // LOADING STATE
+  // ======================================================
 
   if (loading) {
     return (
@@ -143,6 +246,10 @@ function RiskDetails() {
       </div>
     );
   }
+
+  // ======================================================
+  // ERROR STATE
+  // ======================================================
 
   if (error || !risk) {
     return (
@@ -174,6 +281,10 @@ function RiskDetails() {
   const severity = risk.severity || "Unknown";
   const trend = risk.trend || "Unknown";
 
+  // ======================================================
+  // PAGE
+  // ======================================================
+
   return (
     <div className="risk-details-page">
       <button
@@ -184,6 +295,8 @@ function RiskDetails() {
         <FaArrowLeft />
         Back to all risks
       </button>
+
+      {/* RISK HEADER */}
 
       <header className="risk-details-header">
         <div className="risk-details-heading-icon">
@@ -204,11 +317,15 @@ function RiskDetails() {
         </div>
 
         <span
-          className={`risk-details-severity ${getSeverityClass(severity)}`}
+          className={`risk-details-severity ${getSeverityClass(
+            severity
+          )}`}
         >
           {titleCase(severity)}
         </span>
       </header>
+
+      {/* RISK SUMMARY */}
 
       <section className="risk-details-summary">
         <article className="risk-details-summary-card">
@@ -238,6 +355,8 @@ function RiskDetails() {
         </article>
       </section>
 
+      {/* RISK OVERVIEW */}
+
       <section className="risk-details-panel">
         <div className="risk-details-section-heading">
           <FaExclamationTriangle />
@@ -249,6 +368,8 @@ function RiskDetails() {
             "No description has been recorded for this risk."}
         </p>
       </section>
+
+      {/* EXPOSURE AND OPERATIONAL IMPACT */}
 
       <section className="risk-details-panel">
         <div className="risk-details-section-heading">
@@ -283,6 +404,7 @@ function RiskDetails() {
 
         <div className="risk-details-subsection">
           <h3>Supplier Exposure</h3>
+
           {supplierExposures.length > 0 ? (
             <ul>
               {supplierExposures.map((exposure, index) => (
@@ -307,6 +429,8 @@ function RiskDetails() {
           relationships are available in the current data.
         </p>
       </section>
+
+      {/* INDUSTRY IMPACTS */}
 
       <section className="risk-details-panel">
         <div className="risk-details-section-heading">
@@ -338,18 +462,38 @@ function RiskDetails() {
         )}
       </section>
 
+      {/* RECOMMENDED ACTIONS */}
+
       <section className="risk-details-panel">
         <div className="risk-details-section-heading">
           <FaClipboardCheck />
           <h2>Recommended Actions</h2>
         </div>
 
+        {usingCompanyRecommendations && (
+          <p className="risk-details-note">
+            These actions come from the explicitly linked AeroTech
+            demo exposure record. They are illustrative suggestions,
+            not confirmation of an actual company disruption or
+            completed response.
+          </p>
+        )}
+
+        {exposureWarning && isAeroTechLinkedRisk && (
+          <p className="risk-details-empty" role="status">
+            {exposureWarning}
+          </p>
+        )}
+
         {recommendations.length > 0 ? (
           <div className="risk-details-list">
             {recommendations.map((item, index) => (
               <article
                 className="risk-details-list-item"
-                key={item._id || `${item.title}-${index}`}
+                key={
+                  item._id ||
+                  `${item.title || item.action || "action"}-${index}`
+                }
               >
                 <div className="risk-details-action-heading">
                   <strong>
@@ -371,17 +515,38 @@ function RiskDetails() {
 
                 <p>
                   {item.description ||
-                    "No further action details provided."}
+                    item.action ||
+                    "Review this suggested action and determine the appropriate next step."}
                 </p>
+
+                {item.reason && (
+                  <p>
+                    <strong>Why this matters: </strong>
+                    {item.reason}
+                  </p>
+                )}
+
+                {(item.status || item.informationStatus) && (
+                  <p className="risk-details-note">
+                    {item.status || "Suggested"}
+                    {item.informationStatus
+                      ? ` · ${item.informationStatus}`
+                      : ""}
+                  </p>
+                )}
               </article>
             ))}
           </div>
         ) : (
           <p className="risk-details-empty">
-            No recommended actions have been recorded for this risk.
+            {isAeroTechLinkedRisk
+              ? "No recommendations are currently available for this risk. Check the linked AeroTech exposure record."
+              : "No recommendations have been recorded for this risk. Company-specific demo actions are not shown because this risk is not explicitly linked to the AeroTech exposure record."}
           </p>
         )}
       </section>
+
+      {/* FOOTER */}
 
       <div className="risk-details-footer">
         <FaChartLine />
