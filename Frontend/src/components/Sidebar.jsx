@@ -53,12 +53,12 @@ function Sidebar() {
 
                 {/* Logo */}
                 <div className="logo">
-                    <img
-                        src={logo}
-                        alt="NAO Logo"
-                        className="logo"
-                    />
-                </div>
+                   <img
+                      src="/images/nao-sidebar-logo.png"
+                      alt="NAO Logo"
+                      className="logo"
+                     />
+                    </div>
 
                 {/* Navigation */}
                 <nav className="sidebar-menu">
